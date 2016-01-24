@@ -39,8 +39,6 @@ static const RCSwitch::Protocol PROGMEM proto[] = {
     { 300, 1, {  17, 1 }, {  1,  2 }, {  2,  1 } },    // protocol 6
 };
 
-#define PROTO_CNT sizeof(proto) / sizeof(RCSwitch::Protocol)
-
 static const int numProto = sizeof(proto) / sizeof(proto[0]);
 
 #if not defined( RCSwitchDisableReceiving )
@@ -692,7 +690,7 @@ void RCSwitch::handleInterrupt() {
     repeatCount++;
     changeCount--;
     if (repeatCount == 2) {  
-	  for (byte i = 1; i<=PROTO_CNT; i++) {
+	  for (byte i = 1; i<=numProto; i++) {
 	    if (receiveProtocol(i, changeCount))
 	      break;
       }
