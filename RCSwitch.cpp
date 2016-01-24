@@ -31,12 +31,15 @@
 #include "RCSwitch.h"
 
 static const RCSwitch::Protocol PROGMEM proto[] = {
-    { 350, {  1, 31 }, {  1,  3 }, {  3,  1 } },    // protocol 1
-    { 650, {  1, 10 }, {  1,  2 }, {  2,  1 } },    // protocol 2
-    { 100, {  1, 71 }, {  4, 11 }, {  9,  6 } },    // protocol 3
-    { 380, {  1,  6 }, {  1,  3 }, {  3,  1 } },    // protocol 4
-    { 500, {  6, 14 }, {  1,  2 }, {  2,  1 } },    // protocol 5
+    { 350, 0, {  1, 31 }, {  1,  3 }, {  3,  1 } },    // protocol 1
+    { 650, 0, {  1, 10 }, {  1,  2 }, {  2,  1 } },    // protocol 2
+    { 100, 0, {  1, 71 }, {  4, 11 }, {  9,  6 } },    // protocol 3
+    { 380, 0, {  1,  6 }, {  1,  3 }, {  3,  1 } },    // protocol 4
+    { 500, 0, {  6, 14 }, {  1,  2 }, {  2,  1 } },    // protocol 5
+    { 300, 1, {  17, 1 }, {  1,  2 }, {  2,  1 } },    // protocol 6
 };
+
+#define PROTO_CNT sizeof(proto) / sizeof(RCSwitch::Protocol)
 
 static const int numProto = sizeof(proto) / sizeof(proto[0]);
 
@@ -465,6 +468,8 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
 
 void RCSwitch::send(const char* sCodeWord) {
   for (int nRepeat=0; nRepeat<nRepeatTransmit; nRepeat++) {
+    if (protocol.inv)
+      this->sendSync();
     int i = 0;
     while (sCodeWord[i] != '\0') {
       switch(sCodeWord[i]) {
@@ -477,7 +482,8 @@ void RCSwitch::send(const char* sCodeWord) {
       }
       i++;
     }
-    this->sendSync();
+    if (!protocol.inv)
+      this->sendSync();
   }
 }
 
@@ -489,11 +495,17 @@ void RCSwitch::transmit(int nHighPulses, int nLowPulses) {
             this->disableReceive();
         }
         #endif
-        digitalWrite(this->nTransmitterPin, HIGH);
-        delayMicroseconds( this->protocol.pulseLength * nHighPulses);
-        digitalWrite(this->nTransmitterPin, LOW);
-        delayMicroseconds( this->protocol.pulseLength * nLowPulses);
-        
+        if (protocol.inv) {
+          digitalWrite(this->nTransmitterPin, LOW);
+          delayMicroseconds( this->protocol.pulseLength * nHighPulses);
+          digitalWrite(this->nTransmitterPin, HIGH);
+          delayMicroseconds( this->protocol.pulseLength * nLowPulses);
+		} else {
+          digitalWrite(this->nTransmitterPin, HIGH);
+          delayMicroseconds( this->protocol.pulseLength * nHighPulses);
+          digitalWrite(this->nTransmitterPin, LOW);
+          delayMicroseconds( this->protocol.pulseLength * nLowPulses);
+ 	    }
         #if not defined( RCSwitchDisableReceiving )
         if (nReceiverInterrupt_backup != -1) {
             this->enableReceive(nReceiverInterrupt_backup);
@@ -637,10 +649,10 @@ bool RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
     memcpy_P(&pro, &proto[p-1], sizeof(Protocol));
 
     unsigned long code = 0;
-    const unsigned int delay = RCSwitch::timings[0] / pro.syncFactor.low;
+    const unsigned int delay = RCSwitch::timings[0] / ((pro.inv == 0) ? pro.syncFactor.low : pro.syncFactor.high);
     const unsigned int delayTolerance = delay * RCSwitch::nReceiveTolerance / 100;
 
-    for (unsigned int i = 1; i < changeCount; i += 2) {
+    for (unsigned int i = ((pro.inv == 0) ?  1 : 2); i < changeCount; i += 2) {
         code <<= 1;
         if (diff(RCSwitch::timings[i], delay * pro.zero.high) < delayTolerance &&
             diff(RCSwitch::timings[i + 1], delay * pro.zero.low) < delayTolerance) {
@@ -679,13 +691,10 @@ void RCSwitch::handleInterrupt() {
   if (duration > RCSwitch::nSeparationLimit && diff(duration, RCSwitch::timings[0]) < 200) {
     repeatCount++;
     changeCount--;
-    if (repeatCount == 2) {
-      if (receiveProtocol(1, changeCount) == false) {
-        if (receiveProtocol(2, changeCount) == false) {
-          if (receiveProtocol(3, changeCount) == false) {
-            //failed
-          }
-        }
+    if (repeatCount == 2) {  
+	  for (byte i = 1; i<=PROTO_CNT; i++) {
+	    if (receiveProtocol(i, changeCount))
+	      break;
       }
       repeatCount = 0;
     }
