@@ -482,6 +482,9 @@ void RCSwitch::send(const char* sCodeWord) {
     }
     if (!protocol.inv)
       this->sendSync();
+    else
+      digitalWrite(this->nTransmitterPin, LOW);    
+    yield();    
   }
 }
 
